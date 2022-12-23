@@ -30,7 +30,7 @@ export class PngParsedMetadata {
   sampler: string;
 
   @IsNumber()
-  cfg: number;
+  cfgScale: number;
 
   @IsNumber()
   seed: number;
@@ -43,10 +43,19 @@ export class PngParsedMetadata {
 
   @IsString()
   model: string;
+
+  @IsNumber()
+  @IsOptional()
+  denoisingStrength?: number;
+
+  @IsString()
+  @IsOptional()
+  firstPassSize?: string;
 }
 
+// grids vs images
 export const SOURCE_PATH =
-  'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-grids/';
+  'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';
 // export const SOURCE_PATH =
 //   'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';
 // export const SOURCE_PATH = 'H:/MachineLearning/ToSort/img2img/';
@@ -59,7 +68,7 @@ export class AppService {
     const metadata = extractChunks(data);
     const tEXtMetadata = metadata.filter((e) => e.name === 'tEXt');
     if (!tEXtMetadata || !tEXtMetadata.length) {
-      throw new Error('tEXt metadata not found');
+      throw new Error(`tEXt metadata not found for file ${file}`);
     }
 
     const buffer: Buffer = tEXtMetadata[0].data;
@@ -67,46 +76,72 @@ export class AppService {
     return text.decode(buffer);
   }
 
+  private parseValue(value: string, tokenKey: string): string | number {
+    switch (tokenKey) {
+      case 'steps':
+      case 'seed':
+        return parseInt(value);
+      case 'cfgScale':
+      case 'denoisingStrength':
+        return parseFloat(value);
+      default:
+        return value;
+    }
+  }
+
   public parseMetadata(metadata: PngMetadata): PngParsedMetadata {
-    let text = metadata.text;
+    const text = metadata.text;
 
-    const tokens = [
-      'Model: ',
-      'Model hash: ',
-      'Size: ',
-      'Seed: ',
-      'CFG scale: ',
-      'Sampler: ',
-      'Steps: ',
-      'Negative prompt: ',
-    ];
+    const tokensMap = new Map();
+    tokensMap.set('Model', 'model');
+    tokensMap.set('Model hash', 'modelHash');
+    tokensMap.set('Size', 'size');
+    tokensMap.set('Seed', 'seed');
+    tokensMap.set('CFG scale', 'cfgScale');
+    tokensMap.set('Sampler', 'sampler');
+    tokensMap.set('Steps', 'steps');
+    tokensMap.set('Negative prompt', 'negativePrompt');
+    tokensMap.set('Prompt', 'prompt');
+    tokensMap.set('Denoising strength', 'denoisingStrength');
+    tokensMap.set('First pass size', 'firstPassSize');
 
-    const values = [];
-    tokens.forEach((token) => {
-      const pair = text.split(token);
-      values.push(pair[1]);
-      text = pair[0];
-    });
+    const mainToken = 'Steps:';
+    const negativeToken = 'Negative prompt: ';
 
-    const parsed = plainToInstance(PngParsedMetadata, {
-      prompt: text.trim(),
-      negativePrompt: values[7]?.slice(0, -1),
-      steps: parseInt(values[6]),
-      sampler: values[5].slice(0, -2),
-      cfg: parseFloat(values[4]),
-      seed: parseInt(values[3]),
-      size: values[2].slice(0, -2),
-      modelHash: values[1].slice(0, -2),
-      model: values[0],
-    });
+    const mainTokenPosition = text.indexOf(mainToken);
+    const promptsPart = text.slice(0, mainTokenPosition - 1);
+    const tokensPart = text.slice(mainTokenPosition);
 
-    const validationError = validateSync(parsed);
+    const negativeTokenPosition = text.indexOf(negativeToken);
 
-    if (validationError.length > 0) {
-      throw new Error(`Validation failed for ${JSON.stringify(metadata)}`);
+    const parsed = this.parseText(tokensPart);
+
+    if (negativeTokenPosition !== -1) {
+      const parts = promptsPart.split(negativeToken);
+      parsed.set('Prompt', parts[0].trim());
+      parsed.set('Negative prompt', parts[1].trim());
+    } else {
+      parsed.set('Prompt', promptsPart.trim());
     }
 
-    return parsed;
+    const object = {};
+    parsed.forEach((value, key) => {
+      const tokenKey = tokensMap.get(key);
+      object[tokenKey] = this.parseValue(value, tokenKey);
+    });
+
+    const parsedMetadata = plainToInstance(PngParsedMetadata, object);
+    const validationError = validateSync(parsedMetadata);
+
+    if (validationError.length > 0) {
+      throw new Error(
+        `Validation failed for ${JSON.stringify(
+          metadata,
+        )} with error ${validationError}`,
+      );
+    }
+
+    return parsedMetadata;
   }
 
   public organizeGrid(file: string): void {
@@ -137,10 +172,32 @@ export class AppService {
       JSON.stringify(parsedData, null, 2),
       (err) => {
         if (err) {
-          throw new Error(`File ${newFileName}.json was not created`);
+          throw new Error(
+            `File ${newFileName}.json was not created for file ${file}`,
+          );
         }
       },
     );
+  }
+
+  private parseText(text: string): Map<string, string> {
+    // Create an empty map to store the key-value pairs
+    const map = new Map<string, string>();
+
+    // Split the input string on commas to get an array of key-value pairs
+    const pairs = text.split(', ');
+
+    // Loop through each key-value pair
+    for (const pair of pairs) {
+      // Split the pair on the first colon to separate the key and value
+      const [key, value] = pair.split(': ', 2);
+
+      // Add the key-value pair to the map
+      map.set(key, value);
+    }
+
+    // Return the map
+    return map;
   }
 
   public organizeOutput(file: string): void {
@@ -173,15 +230,27 @@ export class AppService {
     );
   }
 
+  public extractSeed(file: string): number {
+    const metadata = this.getPngTextMetadata(file);
+    const parsedData = this.parseMetadata(metadata);
+
+    return parsedData.seed;
+  }
+
   public getPngFiles(path: string): string[] {
     const files = fs.readdirSync(path);
     return files.filter((file) => file.endsWith('.png'));
   }
 
   private isNaked(prompt: string): boolean {
-    return ['naked', 'nude', 'topless'].some(
-      (element) => prompt.indexOf(element) !== -1,
-    );
+    return [
+      'naked',
+      'nude',
+      'topless',
+      'spreading her legs',
+      'pussy',
+      'vagina',
+    ].some((element) => prompt.indexOf(element) !== -1);
   }
 
   private pickClassifiedPromptCode(prompt: string): string {
@@ -201,8 +270,22 @@ export class AppService {
     };
 
     switch (prompt) {
+      case containsWoman(prompt, [
+        'Hasselblad',
+        'Lonesome',
+        'topless',
+        'Moody',
+      ]): {
+        return Styles.WOMAN_TOPLESS_MOODY;
+      }
+      case containsWoman(prompt, ['topless', 'bokeh', 'naked', 'sharp']): {
+        return Styles.WOMAN_NAKED_BOKEH_STEROIDS;
+      }
       case containsWoman(prompt, ['topless', 'bokeh']): {
         return Styles.WOMAN_NAKED_BOKEH;
+      }
+      case containsWoman(prompt, ['spreading her legs with her legs spread']): {
+        return Styles.WOMAN_PYROS_POV_A;
       }
       case containsWoman(prompt, ['topless', 'pose study']): {
         return Styles.WOMAN_NAKED;
@@ -228,8 +311,72 @@ export class AppService {
       case containsWoman(prompt, ['topless']): {
         return Styles.WOMAN_UNKNOWN_TOPLESS;
       }
+      case containsWoman(prompt, ['vagina']): {
+        return Styles.WOMAN_UNKNOWN_NAKED;
+      }
       case containsWoman(prompt, ['1930s']): {
         return Styles.WOMAN_YEAR_1930;
+      }
+      case containsWoman(prompt, ['rapunzel', 'disney', 'studio ghibli']): {
+        return Styles.WOMAN_RAPUNZEL;
+      }
+      case containsWoman(prompt, [
+        'film still',
+        'neon operator',
+        'blade runner',
+        'inceoglu',
+        'pyromallis',
+      ]): {
+        return Styles.WOMAN_CYBERPUNK_PYROMALLIS;
+      }
+      case containsWoman(prompt, ['twin peaks', 'movie poster']): {
+        return Styles.WOMAN_POSTER_TWIN_PEAKS;
+      }
+      case containsWoman(prompt, ['Poster', 'artwork', 'maya takamura']): {
+        return Styles.WOMAN_POSTER_MAYA_TAKAMURA;
+      }
+      case containsWoman(prompt, [
+        'white haired',
+        'goddess',
+        'fantasy',
+        'portrait',
+      ]): {
+        return Styles.WOMAN_PORTRAIT_WHITE_HAIR_GODDESS;
+      }
+      case containsWoman(prompt, ['portrait', 'yoji shinkawa', 'artstation']): {
+        return Styles.WOMAN_PORTRAIT_YOJI_SHINKAWA;
+      }
+      case containsWoman(prompt, [
+        'baroque oil painting',
+        'illustration',
+        'makoto shinkai',
+        'takashi takeuchi',
+      ]): {
+        return Styles.WOMAN_PORTRAIT_MAKOTO_SHINKAI;
+      }
+      case containsWoman(prompt, ['modern portrait', 'rainbow colours']): {
+        return Styles.WOMAN_PORTRAIT_MODERN_RAINBOW;
+      }
+      case containsWoman(prompt, ['illustration', 'red dress', 'wlop']): {
+        return Styles.WOMAN_PORTRAIT_RED_DRESS;
+      }
+      case containsWoman(prompt, ['painting', 'battle armor', 'olive skin']): {
+        return Styles.WOMAN_PORTRAIT_BATTLE_ARMOR;
+      }
+      case containsWoman(prompt, [
+        'drunken',
+        'delirium',
+        'hallucinating',
+        'constellations',
+      ]): {
+        return Styles.WOMAN_DELIRIUM_CONSTELLATIONS;
+      }
+      case containsWoman(prompt, [
+        'masterpiece',
+        'colorful liquid oil paint',
+        'Michael Garmash',
+      ]): {
+        return Styles.WOMAN_PAINTING_LIQUID_OIL;
       }
       case containsWoman(prompt, ['Moody', 'Lonesome', 'Hasselblad']): {
         return Styles.WOMAN_MOODY_HASELBLAD;
@@ -321,6 +468,9 @@ export class AppService {
       case containsWoman(prompt, ['makoto shinkai', 'dreamy eyes']): {
         return Styles.WOMAN_ANIME;
       }
+      case containsWoman(prompt, ['anime illustration']): {
+        return Styles.WOMAN_ANIME_ILLUSTRATION;
+      }
       case containsWoman(prompt, [
         'intricate',
         'gothic clothing',
@@ -345,6 +495,9 @@ export class AppService {
       }
       case containsMan(prompt, ['masculine', 'epic', 'hyperrealistic']): {
         return Styles.MAN_MASCULINE_SUPERHERO;
+      }
+      case containsMan(prompt, ['disney', 'studio ghibli']): {
+        return Styles.MAN_DISNEY;
       }
       case containsMan(prompt, ['handsome', 'firemancer']): {
         return Styles.MAN_FIREMANCER;

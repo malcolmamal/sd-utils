@@ -34,6 +34,16 @@ export class AppController {
   }
 
   @Get()
+  extractSeeds(path: string, files: string[]): string {
+    const seeds: number[] = [];
+    files.forEach(async (file) => {
+      seeds.push(this.appService.extractSeed(path + file));
+    });
+
+    return seeds.join(',');
+  }
+
+  @Get()
   getPngFiles(path: string): string[] {
     return this.appService.getPngFiles(path);
   }
