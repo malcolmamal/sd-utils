@@ -9,6 +9,7 @@ import { IsString, IsNumber, validateSync, IsOptional } from 'class-validator';
 import * as path from 'path';
 
 export const PNG_TEXT_KEYWORD = 'parameters';
+const UNKNOWN_MODEL = 'UNKNOWN_MODEL';
 
 export interface PngMetadata {
   keyword: string;
@@ -122,6 +123,10 @@ export class AppService {
       parsed.set('Negative prompt', parts[1].trim());
     } else {
       parsed.set('Prompt', promptsPart.trim());
+    }
+
+    if (!parsed.has('Model')) {
+      parsed.set('Model', UNKNOWN_MODEL);
     }
 
     const object = {};
