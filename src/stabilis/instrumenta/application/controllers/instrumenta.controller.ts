@@ -1,14 +1,18 @@
 import { Controller, Get } from '@nestjs/common';
 
-import {
-  InstrumentaService,
-  PngMetadata,
-  PngParsedMetadata,
-} from '../services/instrumenta.service';
+import { PngParsedMetadata } from '../../domain/dto/png-parsed-metadata.dto';
+import { MetadataParser } from '../../domain/parsers/metadata.parser';
+import { PngMetadata } from '../../domain/value-objects/png-metadata';
+import { PngFilesProvider } from '../interfaces/png-files.provider';
+import { InstrumentaService } from '../services/instrumenta.service';
 
 @Controller()
 export class InstrumentaController {
-  constructor(private readonly service: InstrumentaService) {}
+  constructor(
+    private readonly service: InstrumentaService,
+    private readonly filesProvider: PngFilesProvider,
+    private readonly parser: MetadataParser,
+  ) {}
 
   @Get()
   getPngTextMetadata(file: string): PngMetadata {
@@ -17,7 +21,7 @@ export class InstrumentaController {
 
   @Get()
   getParsedPngMetadata(metadata: PngMetadata): PngParsedMetadata {
-    return this.service.parseMetadata(metadata);
+    return this.parser.parseMetadata(metadata);
   }
 
   @Get()
@@ -50,6 +54,6 @@ export class InstrumentaController {
 
   @Get()
   getPngFiles(path: string): string[] {
-    return this.service.getPngFiles(path);
+    return this.filesProvider.getPngFiles(path);
   }
 }

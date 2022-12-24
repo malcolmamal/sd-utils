@@ -1,9 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { PngParsedMetadata } from '../../domain/dto/png-parsed-metadata.dto';
+import { MetadataParser } from '../../domain/parsers/metadata.parser';
+import { HddPngFilesProvider } from '../../infrastructure/storage/hdd-png-files.provider';
+import { PngFilesProvider } from '../interfaces/png-files.provider';
 import {
   InstrumentaService,
   PNG_TEXT_KEYWORD,
-  PngParsedMetadata,
   SOURCE_PATH,
 } from '../services/instrumenta.service';
 import { InstrumentaController } from './instrumenta.controller';
@@ -14,7 +17,11 @@ describe(InstrumentaController.name, () => {
   beforeAll(async () => {
     app = await Test.createTestingModule({
       controllers: [InstrumentaController],
-      providers: [InstrumentaService],
+      providers: [
+        InstrumentaService,
+        { provide: PngFilesProvider, useClass: HddPngFilesProvider },
+        MetadataParser,
+      ],
     }).compile();
   });
 

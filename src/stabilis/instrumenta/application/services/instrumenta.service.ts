@@ -1,59 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { plainToInstance } from 'class-transformer';
-import { IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
-import * as fs from 'fs';
-import * as path from 'path';
 import * as text from 'png-chunk-text';
 import * as extractChunks from 'png-chunks-extract';
 import { v4 } from 'uuid';
 
-import { Styles } from '../../domain/styles/styles';
+import { PromptToCategoryMapper } from '../../domain/mappers/prompt-to-category.mapper';
+import { MetadataParser } from '../../domain/parsers/metadata.parser';
+import { Metadata, PngMetadata } from '../../domain/value-objects/png-metadata';
+import { PngFilesProvider } from '../interfaces/png-files.provider';
 
 export const PNG_TEXT_KEYWORD = 'parameters';
-const UNKNOWN_MODEL = 'UNKNOWN_MODEL';
-
-export interface PngMetadata {
-  keyword: string;
-  text: string;
-}
-
-export class PngParsedMetadata {
-  @IsString()
-  prompt: string;
-
-  @IsString()
-  @IsOptional()
-  negativePrompt?: string;
-
-  @IsNumber()
-  steps: number;
-
-  @IsString()
-  sampler: string;
-
-  @IsNumber()
-  cfgScale: number;
-
-  @IsNumber()
-  seed: number;
-
-  @IsString()
-  size: string;
-
-  @IsString()
-  modelHash: string;
-
-  @IsString()
-  model: string;
-
-  @IsNumber()
-  @IsOptional()
-  denoisingStrength?: number;
-
-  @IsString()
-  @IsOptional()
-  firstPassSize?: string;
-}
 
 // grids vs images
 export const SOURCE_PATH =
@@ -63,15 +18,15 @@ export const SOURCE_PATH =
 // export const SOURCE_PATH = 'H:/MachineLearning/ToSort/img2img/';
 const TARGET_PATH = `${SOURCE_PATH}sorted/`;
 
-interface Metadata {
-  name: string;
-  data: Uint8Array;
-}
-
 @Injectable()
 export class InstrumentaService {
+  constructor(
+    private readonly fileProvider: PngFilesProvider,
+    private readonly parser: MetadataParser,
+  ) {}
+
   public getPngTextMetadata(file: string): PngMetadata {
-    const data = fs.readFileSync(file);
+    const data = this.fileProvider.getPngFileContent(file);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     const metadata = extractChunks(data) as Metadata[];
     const tEXtMetadata = metadata.filter((e) => e.name === 'tEXt');
@@ -85,139 +40,33 @@ export class InstrumentaService {
     return text.decode(buffer);
   }
 
-  private parseValue(value: string, tokenKey: string): string | number {
-    switch (tokenKey) {
-      case 'steps':
-      case 'seed':
-        return parseInt(value);
-      case 'cfgScale':
-      case 'denoisingStrength':
-        return parseFloat(value);
-      default:
-        return value;
-    }
-  }
-
-  public parseMetadata(metadata: PngMetadata): PngParsedMetadata {
-    const textValue = metadata.text;
-
-    const tokensMap = new Map<string, string>();
-    tokensMap.set('Model', 'model');
-    tokensMap.set('Model hash', 'modelHash');
-    tokensMap.set('Size', 'size');
-    tokensMap.set('Seed', 'seed');
-    tokensMap.set('CFG scale', 'cfgScale');
-    tokensMap.set('Sampler', 'sampler');
-    tokensMap.set('Steps', 'steps');
-    tokensMap.set('Negative prompt', 'negativePrompt');
-    tokensMap.set('Prompt', 'prompt');
-    tokensMap.set('Denoising strength', 'denoisingStrength');
-    tokensMap.set('First pass size', 'firstPassSize');
-
-    const mainToken = 'Steps:';
-    const negativeToken = 'Negative prompt: ';
-
-    const mainTokenPosition = textValue.indexOf(mainToken);
-    const promptsPart = textValue.slice(0, mainTokenPosition - 1);
-    const tokensPart = textValue.slice(mainTokenPosition);
-
-    const negativeTokenPosition = textValue.indexOf(negativeToken);
-
-    const parsed = this.parseText(tokensPart);
-
-    if (negativeTokenPosition !== -1) {
-      const parts = promptsPart.split(negativeToken);
-      parsed.set('Prompt', parts[0].trim());
-      parsed.set('Negative prompt', parts[1].trim());
-    } else {
-      parsed.set('Prompt', promptsPart.trim());
-    }
-
-    if (!parsed.has('Model')) {
-      parsed.set('Model', UNKNOWN_MODEL);
-    }
-
-    const object = {};
-    parsed.forEach((value, key) => {
-      const tokenKey = tokensMap.get(key);
-      if (tokenKey) {
-        object[tokenKey] = this.parseValue(value, tokenKey);
-      }
-    });
-
-    const parsedMetadata = plainToInstance(PngParsedMetadata, object);
-    const validationError = validateSync(parsedMetadata);
-
-    if (validationError.length > 0) {
-      throw new Error(
-        `Validation failed for ${JSON.stringify(
-          metadata,
-        )} with error ${validationError}`,
-      );
-    }
-
-    return parsedMetadata;
-  }
-
   public organizeGrid(file: string): void {
     const metadata = this.getPngTextMetadata(file);
-    const parsedData = this.parseMetadata(metadata);
+    const parsedData = this.parser.parseMetadata(metadata);
 
-    const newFileName = `${parsedData.model} - ${this.pickClassifiedPromptCode(
-      parsedData.prompt,
-    )}`;
+    const newFileName = `${
+      parsedData.model
+    } - ${PromptToCategoryMapper.classify(parsedData.prompt)}`;
 
     let suffix = '';
-    if (fs.existsSync(`${TARGET_PATH}${newFileName}.png`)) {
+    if (this.fileProvider.fileExists(`${TARGET_PATH}${newFileName}.png`)) {
       suffix = ` (${v4().slice(0, 4)})`;
     }
 
     const fullFilePath = `${TARGET_PATH}${newFileName}${suffix}`;
 
-    fs.copyFile(file, `${fullFilePath}.png`, (err) => {
-      if (err) {
-        throw new Error(
-          `File ${newFileName}.png was not copied to destination`,
-        );
-      }
-    });
-
-    fs.writeFile(
-      `${fullFilePath}.json`,
+    this.fileProvider.copyFile(file, fullFilePath, newFileName);
+    this.fileProvider.createFile(
+      fullFilePath,
       JSON.stringify(parsedData, null, 2),
-      (err) => {
-        if (err) {
-          throw new Error(
-            `File ${newFileName}.json was not created for file ${file}`,
-          );
-        }
-      },
+      newFileName,
+      file,
     );
-  }
-
-  private parseText(textValue: string): Map<string, string> {
-    // Create an empty map to store the key-value pairs
-    const map = new Map<string, string>();
-
-    // Split the input string on commas to get an array of key-value pairs
-    const pairs = textValue.split(', ');
-
-    // Loop through each key-value pair
-    for (const pair of pairs) {
-      // Split the pair on the first colon to separate the key and value
-      const [key, value] = pair.split(': ', 2);
-
-      // Add the key-value pair to the map
-      map.set(key, value);
-    }
-
-    // Return the map
-    return map;
   }
 
   public organizeOutput(file: string): void {
     const metadata = this.getPngTextMetadata(file);
-    const parsedData = this.parseMetadata(metadata);
+    const parsedData = this.parser.parseMetadata(metadata);
 
     let name = 'unknown';
     if (parsedData.model.startsWith('model_')) {
@@ -229,317 +78,17 @@ export class InstrumentaService {
       return;
     }
 
-    const folderSuffix = this.isNaked(parsedData.prompt)
+    const folderSuffix = PromptToCategoryMapper.isNaked(parsedData.prompt)
       ? '/naked/'
       : '/normal/';
 
-    fs.mkdirSync(`${TARGET_PATH}${name}${folderSuffix}`, { recursive: true });
-
-    const basename = path.basename(file);
-    fs.rename(
-      file,
-      `${TARGET_PATH}${name}${folderSuffix}${basename}`,
-      (err) => {
-        if (err) throw err;
-      },
-    );
+    this.fileProvider.moveFile(file, `${TARGET_PATH}${name}${folderSuffix}`);
   }
 
   public extractSeed(file: string): number {
     const metadata = this.getPngTextMetadata(file);
-    const parsedData = this.parseMetadata(metadata);
+    const parsedData = this.parser.parseMetadata(metadata);
 
     return parsedData.seed;
-  }
-
-  public getPngFiles(pathValue: string): string[] {
-    const files = fs.readdirSync(pathValue);
-    return files.filter((file) => file.endsWith('.png'));
-  }
-
-  private isNaked(prompt: string): boolean {
-    return [
-      'naked',
-      'nude',
-      'topless',
-      'spreading her legs',
-      'pussy',
-      'vagina',
-    ].some((element) => prompt.includes(element));
-  }
-
-  private pickClassifiedPromptCode(prompt: string): string {
-    const contains = (textValue: string, words: string[]): boolean =>
-      words.every((el) => {
-        return textValue.match(new RegExp(el, 'i'));
-      });
-
-    const man = 'sks person';
-    const woman = 'sks woman';
-
-    const containsMan = (textValue: string, words: string[] = []): string => {
-      return contains(textValue, [...words, man]) ? prompt : '';
-    };
-    const containsWoman = (textValue: string, words: string[] = []): string => {
-      return contains(textValue, [...words, woman]) ? prompt : '';
-    };
-
-    switch (prompt) {
-      case containsWoman(prompt, [
-        'Hasselblad',
-        'Lonesome',
-        'topless',
-        'Moody',
-      ]): {
-        return Styles.WOMAN_TOPLESS_MOODY;
-      }
-      case containsWoman(prompt, ['topless', 'bokeh', 'naked', 'sharp']): {
-        return Styles.WOMAN_NAKED_BOKEH_STEROIDS;
-      }
-      case containsWoman(prompt, ['topless', 'bokeh']): {
-        return Styles.WOMAN_NAKED_BOKEH;
-      }
-      case containsWoman(prompt, ['spreading her legs with her legs spread']): {
-        return Styles.WOMAN_PYROS_POV_A;
-      }
-      case containsWoman(prompt, ['topless', 'pose study']): {
-        return Styles.WOMAN_NAKED;
-      }
-      case containsWoman(prompt, [
-        'topless',
-        'feminine',
-        'epic',
-        'studio lighting',
-        'hyperrealistic',
-      ]): {
-        return Styles.WOMAN_TOPLESS_ARTISTIC;
-      }
-      case containsWoman(prompt, ['topless']): {
-        return Styles.WOMAN_CASUAL_NUDE;
-      }
-      case containsWoman(prompt, ['naked']): {
-        return Styles.WOMAN_UNKNOWN_NAKED;
-      }
-      case containsWoman(prompt, ['nude']): {
-        return Styles.WOMAN_UNKNOWN_NUDE;
-      }
-      case containsWoman(prompt, ['vagina']): {
-        return Styles.WOMAN_UNKNOWN_NAKED;
-      }
-      case containsWoman(prompt, ['1930s']): {
-        return Styles.WOMAN_YEAR_1930;
-      }
-      case containsWoman(prompt, ['rapunzel', 'disney', 'studio ghibli']): {
-        return Styles.WOMAN_RAPUNZEL;
-      }
-      case containsWoman(prompt, [
-        'film still',
-        'neon operator',
-        'blade runner',
-        'inceoglu',
-        'pyromallis',
-      ]): {
-        return Styles.WOMAN_CYBERPUNK_PYROMALLIS;
-      }
-      case containsWoman(prompt, ['twin peaks', 'movie poster']): {
-        return Styles.WOMAN_POSTER_TWIN_PEAKS;
-      }
-      case containsWoman(prompt, ['Poster', 'artwork', 'maya takamura']): {
-        return Styles.WOMAN_POSTER_MAYA_TAKAMURA;
-      }
-      case containsWoman(prompt, [
-        'white haired',
-        'goddess',
-        'fantasy',
-        'portrait',
-      ]): {
-        return Styles.WOMAN_PORTRAIT_WHITE_HAIR_GODDESS;
-      }
-      case containsWoman(prompt, ['portrait', 'yoji shinkawa', 'artstation']): {
-        return Styles.WOMAN_PORTRAIT_YOJI_SHINKAWA;
-      }
-      case containsWoman(prompt, [
-        'baroque oil painting',
-        'illustration',
-        'makoto shinkai',
-        'takashi takeuchi',
-      ]): {
-        return Styles.WOMAN_PORTRAIT_MAKOTO_SHINKAI;
-      }
-      case containsWoman(prompt, ['modern portrait', 'rainbow colours']): {
-        return Styles.WOMAN_PORTRAIT_MODERN_RAINBOW;
-      }
-      case containsWoman(prompt, ['illustration', 'red dress', 'wlop']): {
-        return Styles.WOMAN_PORTRAIT_RED_DRESS;
-      }
-      case containsWoman(prompt, ['painting', 'battle armor', 'olive skin']): {
-        return Styles.WOMAN_PORTRAIT_BATTLE_ARMOR;
-      }
-      case containsWoman(prompt, [
-        'drunken',
-        'delirium',
-        'hallucinating',
-        'constellations',
-      ]): {
-        return Styles.WOMAN_DELIRIUM_CONSTELLATIONS;
-      }
-      case containsWoman(prompt, [
-        'masterpiece',
-        'colorful liquid oil paint',
-        'Michael Garmash',
-      ]): {
-        return Styles.WOMAN_PAINTING_LIQUID_OIL;
-      }
-      case containsWoman(prompt, ['Moody', 'Lonesome', 'Hasselblad']): {
-        return Styles.WOMAN_MOODY_HASELBLAD;
-      }
-      case containsWoman(prompt, ['peter lindbergh', 'portrait']): {
-        return Styles.WOMAN_PORTRAIT_PETER_LIDBERGH;
-      }
-      case containsWoman(prompt, ['arctic fox spirit']): {
-        return Styles.WOMAN_PAINTING_ARCTIC_SPIRIT;
-      }
-      case containsWoman(prompt, ['magic celestial', 'transparent']): {
-        return Styles.WOMAN_PAINTING_CELESTIAL;
-      }
-      case containsWoman(prompt, ['mischievous', 'queen of elves']): {
-        return Styles.WOMAN_PORTRAIT_QUEEN_OF_ELVES;
-      }
-      case containsWoman(prompt, ['masterpiece', 'jean-baptiste monge']): {
-        return Styles.WOMAN_PORTRAIT_JEAN_BAPTISTE_MONGE;
-      }
-      case containsWoman(prompt, ['sensual', 'irezumi tattoos']): {
-        return Styles.WOMAN_IREZUMI_TATTOOS;
-      }
-      case containsWoman(prompt, ['flat colors', 'watercolors']): {
-        return Styles.WOMAN_PAINTING_WATERCOLOR;
-      }
-      case containsWoman(prompt, [
-        'flat colors',
-        'multicolored',
-        'russ mills',
-      ]): {
-        return Styles.WOMAN_PAINTING_RUSS_MILLS;
-      }
-      case containsWoman(prompt, ['croptop', 'josan gonzales']): {
-        return Styles.WOMAN_PORTRAIT_JOSAN_GONZALES;
-      }
-      case containsWoman(prompt, ['pudge', 'elegant', 'highly detailed']): {
-        return Styles.WOMAN_PAINTING_ELEGANT_PUDGE;
-      }
-      case containsWoman(prompt, ['portrait', 'realistic', 'Jeremy Lipking']): {
-        return Styles.WOMAN_PORTRAIT_JEREMY_LIPKING;
-      }
-      case containsWoman(prompt, [
-        'feminine',
-        'epic',
-        'hyperrealistic',
-        'pores',
-      ]): {
-        return Styles.WOMAN_FEMININE_SUPERHERO;
-      }
-      case containsWoman(prompt, ['lingerie']): {
-        return Styles.WOMAN_LINGERIE;
-      }
-      case containsWoman(prompt, ['delirium']): {
-        return Styles.WOMAN_DELIRIUM;
-      }
-      case containsWoman(prompt, ['female dr strange']): {
-        return Styles.WOMAN_DR_STRANGE;
-      }
-      case containsWoman(prompt, ['dominatrix']): {
-        return Styles.WOMAN_DOMINATRIX;
-      }
-      case containsWoman(prompt, ['leather jacket']): {
-        return Styles.WOMAN_LEATHER_JACKET;
-      }
-      case containsWoman(prompt, ['spirograph']): {
-        return Styles.WOMAN_SPIROGRAPH;
-      }
-      case containsWoman(prompt, ['cyberpunk', 'neon', 'reflective']): {
-        return Styles.WOMAN_NEON_CYBERPUNK;
-      }
-      case containsWoman(prompt, ['leather', 'armor']): {
-        return Styles.WOMAN_ARMOR;
-      }
-      case containsWoman(prompt, ['winged', 'firemancer']): {
-        return Styles.WOMAN_WINGED_FIREMANCER;
-      }
-      case containsWoman(prompt, ['firemancer', 'fire in hands']): {
-        return Styles.WOMAN_FIREMANCER;
-      }
-      case containsWoman(prompt, ['Agnes Cecile']): {
-        return Styles.WOMAN_AGNESS_CECILE;
-      }
-      case containsWoman(prompt, ['Sung Choi', 'Mitchell Mohrhauser']): {
-        return Styles.WOMAN_FANCY_PAINTING;
-      }
-      case containsWoman(prompt, ['Flora Borsi']): {
-        return Styles.WOMAN_FLORA_BORSI;
-      }
-      case containsWoman(prompt, ['makoto shinkai', 'dreamy eyes']): {
-        return Styles.WOMAN_ANIME;
-      }
-      case containsWoman(prompt, ['anime illustration']): {
-        return Styles.WOMAN_ANIME_ILLUSTRATION;
-      }
-      case containsWoman(prompt, [
-        'intricate',
-        'gothic clothing',
-        'victoria secret',
-      ]): {
-        return Styles.WOMAN_INTRICATE;
-      }
-      case containsWoman(prompt, ['beautiful eyes', 'fantasy art']): {
-        return Styles.WOMAN_INTERESTING_PORTRAIT;
-      }
-      case containsWoman(prompt, ['samurai', 'katana']): {
-        return Styles.WOMAN_SAMURAI;
-      }
-      case containsWoman(prompt, ['bokeh']): {
-        return Styles.WOMAN_BOKEH;
-      }
-      case containsWoman(prompt, ['detailed face']): {
-        return Styles.WOMAN_NORMAL;
-      }
-      case containsWoman(prompt): {
-        return Styles.WOMAN_UNKNOWN;
-      }
-      case containsMan(prompt, ['masculine', 'epic', 'hyperrealistic']): {
-        return Styles.MAN_MASCULINE_SUPERHERO;
-      }
-      case containsMan(prompt, ['disney', 'studio ghibli']): {
-        return Styles.MAN_DISNEY;
-      }
-      case containsMan(prompt, ['handsome', 'firemancer']): {
-        return Styles.MAN_FIREMANCER;
-      }
-      case containsMan(prompt, ['Moody', 'Lonesome', 'Hasselblad']): {
-        return Styles.MAN_MOODY_HASELBLAD;
-      }
-      case containsMan(prompt, ['samurai', 'katana']): {
-        return Styles.MAN_SAMURAI;
-      }
-      case containsMan(prompt, ['conan the barbarian']): {
-        return Styles.MAN_BARBARIAN;
-      }
-      case containsMan(prompt, ['blade runner', 'cyberpunk']): {
-        return Styles.MAN_CYBERPUNK_BLADE_RUNNER;
-      }
-      case containsMan(prompt, ['bokeh']): {
-        return Styles.MAN_BOKEH;
-      }
-      case containsMan(prompt, ['intricate']): {
-        return Styles.MAN_INTRICATE;
-      }
-      case containsMan(prompt, ['detailed face']): {
-        return Styles.MAN_NORMAL;
-      }
-      case containsMan(prompt): {
-        return Styles.MAN_UNKNOWN;
-      }
-      default:
-        return `${Styles.UNKNOWN} - ${v4().slice(0, 8)}`;
-    }
   }
 }
