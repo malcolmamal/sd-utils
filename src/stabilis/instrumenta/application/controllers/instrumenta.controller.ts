@@ -1,24 +1,29 @@
 import { Controller, Get } from '@nestjs/common';
-import { AppService, PngMetadata, PngParsedMetadata } from './app.service';
+
+import {
+  InstrumentaService,
+  PngMetadata,
+  PngParsedMetadata,
+} from '../services/instrumenta.service';
 
 @Controller()
-export class AppController {
-  constructor(private readonly appService: AppService) {}
+export class InstrumentaController {
+  constructor(private readonly service: InstrumentaService) {}
 
   @Get()
   getPngTextMetadata(file: string): PngMetadata {
-    return this.appService.getPngTextMetadata(file);
+    return this.service.getPngTextMetadata(file);
   }
 
   @Get()
   getParsedPngMetadata(metadata: PngMetadata): PngParsedMetadata {
-    return this.appService.parseMetadata(metadata);
+    return this.service.parseMetadata(metadata);
   }
 
   @Get()
   organizeGrids(path: string, files: string[]): string {
-    files.forEach(async (file) => {
-      this.appService.organizeGrid(path + file);
+    files.forEach((file) => {
+      this.service.organizeGrid(path + file);
     });
 
     return 'done';
@@ -26,8 +31,8 @@ export class AppController {
 
   @Get()
   organizeOutputs(path: string, files: string[]): string {
-    files.forEach(async (file) => {
-      this.appService.organizeOutput(path + file);
+    files.forEach((file) => {
+      this.service.organizeOutput(path + file);
     });
 
     return 'done';
@@ -36,8 +41,8 @@ export class AppController {
   @Get()
   extractSeeds(path: string, files: string[]): string {
     const seeds: number[] = [];
-    files.forEach(async (file) => {
-      seeds.push(this.appService.extractSeed(path + file));
+    files.forEach((file) => {
+      seeds.push(this.service.extractSeed(path + file));
     });
 
     return seeds.join(',');
@@ -45,6 +50,6 @@ export class AppController {
 
   @Get()
   getPngFiles(path: string): string[] {
-    return this.appService.getPngFiles(path);
+    return this.service.getPngFiles(path);
   }
 }

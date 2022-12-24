@@ -1,25 +1,26 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AppController } from './app.controller';
-import {
-  AppService,
-  PngParsedMetadata,
-  PNG_TEXT_KEYWORD,
-  SOURCE_PATH,
-} from './app.service';
 
-describe(AppController.name, () => {
+import {
+  InstrumentaService,
+  PNG_TEXT_KEYWORD,
+  PngParsedMetadata,
+  SOURCE_PATH,
+} from '../services/instrumenta.service';
+import { InstrumentaController } from './instrumenta.controller';
+
+describe(InstrumentaController.name, () => {
   let app: TestingModule;
 
   beforeAll(async () => {
     app = await Test.createTestingModule({
-      controllers: [AppController],
-      providers: [AppService],
+      controllers: [InstrumentaController],
+      providers: [InstrumentaService],
     }).compile();
   });
 
   describe('parsing', () => {
     it('should return metadata', () => {
-      const appController = app.get(AppController);
+      const appController = app.get(InstrumentaController);
       const metadata = appController.getPngTextMetadata(
         'example/grid-0134.png',
       );
@@ -29,7 +30,7 @@ describe(AppController.name, () => {
     });
 
     it('should parse correctly', () => {
-      const appController = app.get(AppController);
+      const appController = app.get(InstrumentaController);
 
       const metadata = {
         keyword: PNG_TEXT_KEYWORD,
@@ -50,7 +51,7 @@ describe(AppController.name, () => {
     });
 
     it('should parse metadata', () => {
-      const appController = app.get(AppController);
+      const appController = app.get(InstrumentaController);
 
       const prompt =
         'professional photograph of sks woman, ((detailed face)), (High Detail), Sharp, 8k, ((bokeh))';
@@ -63,8 +64,8 @@ describe(AppController.name, () => {
       const size = '512x704';
       const modelHash = '333ecf3c';
       const model = 'model_miley_v1_5000';
-      const denoisingStrength = null;
-      const firstPassSize = null;
+      const denoisingStrength = 2;
+      const firstPassSize = 'asd';
 
       const metadata = {
         keyword: PNG_TEXT_KEYWORD,
@@ -97,34 +98,40 @@ describe(AppController.name, () => {
       });
     });
 
-    it('should organize grid files', async () => {
-      const appController = app.get(AppController);
+    it('should organize grid files', () => {
+      const appController = app.get(InstrumentaController);
       const files = appController.getPngFiles(SOURCE_PATH);
 
+      expect(files).toBeInstanceOf(Array);
+
       if (!files.length) {
-        fail('No files to process');
+        throw new Error('No files to process');
       }
 
       appController.organizeGrids(SOURCE_PATH, files);
     });
 
-    it.only('should organize output files', async () => {
-      const appController = app.get(AppController);
+    it.only('should organize output files', () => {
+      const appController = app.get(InstrumentaController);
       const files = appController.getPngFiles(SOURCE_PATH);
 
+      expect(Array.isArray(files)).toBe(true);
+
       if (!files.length) {
-        fail('No files to process');
+        throw new Error('No files to process');
       }
 
       appController.organizeOutputs(SOURCE_PATH, files);
     });
 
-    it('should generate seeds list', async () => {
-      const appController = app.get(AppController);
+    it('should generate seeds list', () => {
+      const appController = app.get(InstrumentaController);
       const files = appController.getPngFiles(SOURCE_PATH);
 
+      expect(files).toBeInstanceOf(Array);
+
       if (!files.length) {
-        fail('No files to process');
+        throw new Error('No files to process');
       }
 
       const result = appController.extractSeeds(SOURCE_PATH, files);

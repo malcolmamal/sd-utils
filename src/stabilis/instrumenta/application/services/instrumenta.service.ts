@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import * as fs from 'fs';
-import * as extractChunks from 'png-chunks-extract';
-import * as text from 'png-chunk-text';
-import { v4 } from 'uuid';
-import { Styles } from './styles';
 import { plainToInstance } from 'class-transformer';
-import { IsString, IsNumber, validateSync, IsOptional } from 'class-validator';
+import { IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
+import * as fs from 'fs';
 import * as path from 'path';
+import * as text from 'png-chunk-text';
+import * as extractChunks from 'png-chunks-extract';
+import { v4 } from 'uuid';
+
+import { Styles } from '../../domain/styles/styles';
 
 export const PNG_TEXT_KEYWORD = 'parameters';
 const UNKNOWN_MODEL = 'UNKNOWN_MODEL';
@@ -60,20 +61,27 @@ export const SOURCE_PATH =
 // export const SOURCE_PATH =
 //   'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';
 // export const SOURCE_PATH = 'H:/MachineLearning/ToSort/img2img/';
-const TARGET_PATH = SOURCE_PATH + `sorted/`;
+const TARGET_PATH = `${SOURCE_PATH}sorted/`;
+
+interface Metadata {
+  name: string;
+  data: Uint8Array;
+}
 
 @Injectable()
-export class AppService {
+export class InstrumentaService {
   public getPngTextMetadata(file: string): PngMetadata {
     const data = fs.readFileSync(file);
-    const metadata = extractChunks(data);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+    const metadata = extractChunks(data) as Metadata[];
     const tEXtMetadata = metadata.filter((e) => e.name === 'tEXt');
-    if (!tEXtMetadata || !tEXtMetadata.length) {
+    if (!tEXtMetadata.length) {
       throw new Error(`tEXt metadata not found for file ${file}`);
     }
 
-    const buffer: Buffer = tEXtMetadata[0].data;
+    const buffer: Buffer = tEXtMetadata[0].data as Buffer;
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     return text.decode(buffer);
   }
 
@@ -91,9 +99,9 @@ export class AppService {
   }
 
   public parseMetadata(metadata: PngMetadata): PngParsedMetadata {
-    const text = metadata.text;
+    const textValue = metadata.text;
 
-    const tokensMap = new Map();
+    const tokensMap = new Map<string, string>();
     tokensMap.set('Model', 'model');
     tokensMap.set('Model hash', 'modelHash');
     tokensMap.set('Size', 'size');
@@ -109,11 +117,11 @@ export class AppService {
     const mainToken = 'Steps:';
     const negativeToken = 'Negative prompt: ';
 
-    const mainTokenPosition = text.indexOf(mainToken);
-    const promptsPart = text.slice(0, mainTokenPosition - 1);
-    const tokensPart = text.slice(mainTokenPosition);
+    const mainTokenPosition = textValue.indexOf(mainToken);
+    const promptsPart = textValue.slice(0, mainTokenPosition - 1);
+    const tokensPart = textValue.slice(mainTokenPosition);
 
-    const negativeTokenPosition = text.indexOf(negativeToken);
+    const negativeTokenPosition = textValue.indexOf(negativeToken);
 
     const parsed = this.parseText(tokensPart);
 
@@ -132,7 +140,9 @@ export class AppService {
     const object = {};
     parsed.forEach((value, key) => {
       const tokenKey = tokensMap.get(key);
-      object[tokenKey] = this.parseValue(value, tokenKey);
+      if (tokenKey) {
+        object[tokenKey] = this.parseValue(value, tokenKey);
+      }
     });
 
     const parsedMetadata = plainToInstance(PngParsedMetadata, object);
@@ -185,12 +195,12 @@ export class AppService {
     );
   }
 
-  private parseText(text: string): Map<string, string> {
+  private parseText(textValue: string): Map<string, string> {
     // Create an empty map to store the key-value pairs
     const map = new Map<string, string>();
 
     // Split the input string on commas to get an array of key-value pairs
-    const pairs = text.split(', ');
+    const pairs = textValue.split(', ');
 
     // Loop through each key-value pair
     for (const pair of pairs) {
@@ -211,7 +221,7 @@ export class AppService {
 
     let name = 'unknown';
     if (parsedData.model.startsWith('model_')) {
-      name = parsedData.model.split('_')?.[1];
+      name = parsedData.model.split('_')[1];
     }
 
     if (!/^[a-zA-Z]+$/.test(name)) {
@@ -229,7 +239,7 @@ export class AppService {
     fs.rename(
       file,
       `${TARGET_PATH}${name}${folderSuffix}${basename}`,
-      function (err) {
+      (err) => {
         if (err) throw err;
       },
     );
@@ -242,8 +252,8 @@ export class AppService {
     return parsedData.seed;
   }
 
-  public getPngFiles(path: string): string[] {
-    const files = fs.readdirSync(path);
+  public getPngFiles(pathValue: string): string[] {
+    const files = fs.readdirSync(pathValue);
     return files.filter((file) => file.endsWith('.png'));
   }
 
@@ -255,23 +265,23 @@ export class AppService {
       'spreading her legs',
       'pussy',
       'vagina',
-    ].some((element) => prompt.indexOf(element) !== -1);
+    ].some((element) => prompt.includes(element));
   }
 
   private pickClassifiedPromptCode(prompt: string): string {
-    const contains = (text: string, words: string[]): boolean =>
+    const contains = (textValue: string, words: string[]): boolean =>
       words.every((el) => {
-        return text.match(new RegExp(el, 'i'));
+        return textValue.match(new RegExp(el, 'i'));
       });
 
     const man = 'sks person';
     const woman = 'sks woman';
 
-    const containsMan = (text: string, words: string[] = []): string => {
-      return contains(text, [...words, man]) ? prompt : '';
+    const containsMan = (textValue: string, words: string[] = []): string => {
+      return contains(textValue, [...words, man]) ? prompt : '';
     };
-    const containsWoman = (text: string, words: string[] = []): string => {
-      return contains(text, [...words, woman]) ? prompt : '';
+    const containsWoman = (textValue: string, words: string[] = []): string => {
+      return contains(textValue, [...words, woman]) ? prompt : '';
     };
 
     switch (prompt) {
@@ -312,9 +322,6 @@ export class AppService {
       }
       case containsWoman(prompt, ['nude']): {
         return Styles.WOMAN_UNKNOWN_NUDE;
-      }
-      case containsWoman(prompt, ['topless']): {
-        return Styles.WOMAN_UNKNOWN_TOPLESS;
       }
       case containsWoman(prompt, ['vagina']): {
         return Styles.WOMAN_UNKNOWN_NAKED;
