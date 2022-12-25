@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { SOURCE_PATH } from '../../../../config';
 import { PngParsedMetadata } from '../../domain/dto/png-parsed-metadata.dto';
 import { MetadataParser } from '../../domain/parsers/metadata.parser';
 import { HddPngFilesProvider } from '../../infrastructure/storage/hdd-png-files.provider';
@@ -7,7 +8,6 @@ import { PngFilesProvider } from '../interfaces/png-files.provider';
 import {
   InstrumentaService,
   PNG_TEXT_KEYWORD,
-  SOURCE_PATH,
 } from '../services/instrumenta.service';
 import { InstrumentaController } from './instrumenta.controller';
 

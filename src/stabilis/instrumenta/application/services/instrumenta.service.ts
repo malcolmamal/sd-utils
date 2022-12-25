@@ -1,43 +1,27 @@
 import { Injectable } from '@nestjs/common';
-import * as text from 'png-chunk-text';
-import * as extractChunks from 'png-chunks-extract';
 import { v4 } from 'uuid';
 
+import { TARGET_PATH } from '../../../../config';
 import { PromptToCategoryMapper } from '../../domain/mappers/prompt-to-category.mapper';
+import { MetadataExtractor } from '../../domain/parsers/metadata.extractor';
 import { MetadataParser } from '../../domain/parsers/metadata.parser';
-import { Metadata, PngMetadata } from '../../domain/value-objects/png-metadata';
+import { PngMetadata } from '../../domain/value-objects/png-metadata';
 import { PngFilesProvider } from '../interfaces/png-files.provider';
 
 export const PNG_TEXT_KEYWORD = 'parameters';
-
-// grids vs images
-export const SOURCE_PATH =
-  'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';
-// export const SOURCE_PATH =
-//   'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';
-// export const SOURCE_PATH = 'H:/MachineLearning/ToSort/img2img/';
-const TARGET_PATH = `${SOURCE_PATH}sorted/`;
 
 @Injectable()
 export class InstrumentaService {
   constructor(
     private readonly fileProvider: PngFilesProvider,
     private readonly parser: MetadataParser,
+    private readonly extractor: MetadataExtractor,
   ) {}
 
   public getPngTextMetadata(file: string): PngMetadata {
     const data = this.fileProvider.getPngFileContent(file);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    const metadata = extractChunks(data) as Metadata[];
-    const tEXtMetadata = metadata.filter((e) => e.name === 'tEXt');
-    if (!tEXtMetadata.length) {
-      throw new Error(`tEXt metadata not found for file ${file}`);
-    }
 
-    const buffer: Buffer = tEXtMetadata[0].data as Buffer;
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    return text.decode(buffer);
+    return this.extractor.getPngMetadata(data, file);
   }
 
   public organizeGrid(file: string): void {
