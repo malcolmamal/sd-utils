@@ -1,3 +1,5 @@
+export const BASE_SOURCE_PATH =
+  'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/';
 // grids vs images
 export const SOURCE_PATH =
   'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';

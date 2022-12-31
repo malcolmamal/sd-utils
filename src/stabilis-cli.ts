@@ -1,16 +1,46 @@
 import { NestFactory } from '@nestjs/core';
+import { parse } from 'ts-command-line-args';
 
-import { SOURCE_PATH } from './config';
+import { BASE_SOURCE_PATH } from './config';
 import { InstrumentaController } from './stabilis/instrumenta/application/controllers/instrumenta.controller';
 import { InstrumentaModule } from './stabilis/instrumenta/instrumenta.module';
 
+interface CliArguments {
+  sourcePath?: string;
+  type?: string;
+  help?: boolean;
+}
+
 async function bootstrap() {
+  const args = parse<CliArguments>(
+    {
+      sourcePath: { type: String, optional: true },
+      type: { type: String, optional: true },
+      help: {
+        type: Boolean,
+        optional: true,
+        alias: 'h',
+        description: 'Prints this usage guide',
+      },
+    },
+    {
+      helpArg: 'help',
+    },
+  );
+
   const app = await NestFactory.createApplicationContext(InstrumentaModule);
   const controller = app.get(InstrumentaController);
-  const files = controller.getPngFiles(SOURCE_PATH);
+  const path =
+    args.type === 'grid'
+      ? `${BASE_SOURCE_PATH}txt2img-grids/`
+      : `${BASE_SOURCE_PATH}txt2img-images/`;
 
-  const output = controller.extractSeeds(SOURCE_PATH, files);
-  console.log(output);
+  const files = controller.getPngFiles(path);
+  if (args.type === 'grid') {
+    controller.organizeGrids(path, files);
+  } else {
+    controller.organizeOutputs(path, files);
+  }
 
   await app.close();
 }
