@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { SOURCE_PATH } from '../../../../config';
+import {
+  BASE_SOURCE_PATH,
+  FOLDER_GRIDS,
+  FOLDER_IMAGES,
+} from '../../../../config';
 import { PngParsedMetadata } from '../../domain/dto/png-parsed-metadata.dto';
 import { MetadataParser } from '../../domain/parsers/metadata.parser';
 import { HddPngFilesProvider } from '../../infrastructure/storage/hdd-png-files.provider';
@@ -107,7 +111,9 @@ describe(InstrumentaController.name, () => {
 
     it('should organize grid files', () => {
       const appController = app.get(InstrumentaController);
-      const files = appController.getPngFiles(SOURCE_PATH);
+      const files = appController.getPngFiles(
+        `${BASE_SOURCE_PATH}${FOLDER_GRIDS}`,
+      );
 
       expect(files).toBeInstanceOf(Array);
 
@@ -115,12 +121,14 @@ describe(InstrumentaController.name, () => {
         throw new Error('No files to process');
       }
 
-      appController.organizeGrids(SOURCE_PATH, files);
+      appController.organizeGrids(`${BASE_SOURCE_PATH}${FOLDER_GRIDS}`, files);
     });
 
     it.only('should organize output files', () => {
       const appController = app.get(InstrumentaController);
-      const files = appController.getPngFiles(SOURCE_PATH);
+      const files = appController.getPngFiles(
+        `${BASE_SOURCE_PATH}${FOLDER_IMAGES}`,
+      );
 
       expect(Array.isArray(files)).toBe(true);
 
@@ -128,12 +136,17 @@ describe(InstrumentaController.name, () => {
         throw new Error('No files to process');
       }
 
-      appController.organizeOutputs(SOURCE_PATH, files);
+      appController.organizeOutputs(
+        `${BASE_SOURCE_PATH}${FOLDER_IMAGES}`,
+        files,
+      );
     });
 
     it('should generate seeds list', () => {
       const appController = app.get(InstrumentaController);
-      const files = appController.getPngFiles(SOURCE_PATH);
+      const files = appController.getPngFiles(
+        `${BASE_SOURCE_PATH}${FOLDER_IMAGES}`,
+      );
 
       expect(files).toBeInstanceOf(Array);
 
@@ -141,7 +154,10 @@ describe(InstrumentaController.name, () => {
         throw new Error('No files to process');
       }
 
-      const result = appController.extractSeeds(SOURCE_PATH, files);
+      const result = appController.extractSeeds(
+        `${BASE_SOURCE_PATH}${FOLDER_IMAGES}`,
+        files,
+      );
       console.log(result);
     });
   });

@@ -1,9 +1,5 @@
 export const BASE_SOURCE_PATH =
   'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/';
-// grids vs images
-export const SOURCE_PATH =
-  'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';
-// export const SOURCE_PATH =
-//   'C:/Development/StableDiffusion/stable-diffusion-webui/outputs/txt2img-images/';
-// export const SOURCE_PATH = 'H:/MachineLearning/ToSort/img2img/';
-export const TARGET_PATH = `${SOURCE_PATH}sorted/`;
+export const TARGET_PATH = `${BASE_SOURCE_PATH}sorted/`;
+export const FOLDER_GRIDS = 'txt2img-grids/';
+export const FOLDER_IMAGES = 'txt2img-images/';

@@ -1,7 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { parse } from 'ts-command-line-args';
 
-import { BASE_SOURCE_PATH } from './config';
+import { BASE_SOURCE_PATH, FOLDER_GRIDS, FOLDER_IMAGES } from './config';
 import { InstrumentaController } from './stabilis/instrumenta/application/controllers/instrumenta.controller';
 import { InstrumentaModule } from './stabilis/instrumenta/instrumenta.module';
 
@@ -32,8 +32,8 @@ async function bootstrap() {
   const controller = app.get(InstrumentaController);
   const path =
     args.type === 'grid'
-      ? `${BASE_SOURCE_PATH}txt2img-grids/`
-      : `${BASE_SOURCE_PATH}txt2img-images/`;
+      ? `${BASE_SOURCE_PATH}${FOLDER_GRIDS}`
+      : `${BASE_SOURCE_PATH}${FOLDER_IMAGES}`;
 
   const files = controller.getPngFiles(path);
   if (args.type === 'grid') {

@@ -49,7 +49,14 @@ export class InstrumentaService {
   }
 
   public organizeOutput(file: string): void {
-    const metadata = this.getPngTextMetadata(file);
+    let metadata;
+    try {
+      metadata = this.getPngTextMetadata(file);
+    } catch (_e) {
+      console.log(`Error for file: ${file}, skipping!`);
+      return;
+    }
+
     const parsedData = this.parser.parseMetadata(metadata);
 
     let name = 'unknown';
